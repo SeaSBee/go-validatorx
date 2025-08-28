@@ -15,7 +15,7 @@ A comprehensive Go validation library that provides flexible, extensible validat
 ## Installation
 
 ```bash
-go get github.com/seasbee/go-validatorx
+go get github.com/SeaSBee/go-validatorx
 ```
 
 ## Quick Start
@@ -27,7 +27,7 @@ package main
 
 import (
     "fmt"
-    "github.com/seasbee/go-validatorx"
+    "github.com/SeaSBee/go-validatorx"
 )
 
 type User struct {

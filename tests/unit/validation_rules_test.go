@@ -698,3 +698,108 @@ func TestValidateComparisonRules(t *testing.T) {
 		assert.NoError(t, validator.Validate("lt:5", nil))
 	})
 }
+
+// TestNewValidationRules tests the new validation rules (UUID, Alpha, Alphanumeric, Numeric)
+func TestNewValidationRules(t *testing.T) {
+	validator := validatorx.NewValidator()
+
+	t.Run("ValidateUUID", func(t *testing.T) {
+		testCases := []struct {
+			value    interface{}
+			expected bool
+		}{
+			{"550e8400-e29b-41d4-a716-446655440000", true},   // Valid UUID v4
+			{"550e8400-e29b-41d4-a716-446655440000", true},   // Valid UUID v4
+			{"6ba7b810-9dad-11d1-80b4-00c04fd430c8", true},   // Valid UUID v5
+			{"invalid-uuid", false},                          // Invalid format
+			{"550e8400-e29b-41d4-a716-44665544000", false},   // Too short
+			{"550e8400-e29b-41d4-a716-4466554400000", false}, // Too long
+			{"", false},  // Empty string
+			{nil, true},  // Nil should be skipped
+			{123, false}, // Non-string
+		}
+
+		for _, tc := range testCases {
+			err := validator.Validate("uuid", tc.value)
+			if tc.expected {
+				assert.NoError(t, err, "Value %v should be valid UUID", tc.value)
+			} else {
+				assert.Error(t, err, "Value %v should not be valid UUID", tc.value)
+			}
+		}
+	})
+
+	t.Run("ValidateAlpha", func(t *testing.T) {
+		testCases := []struct {
+			value    interface{}
+			expected bool
+		}{
+			{"HelloWorld", true},   // Only alphabetic
+			{"Hello World", false}, // Contains space
+			{"Hello123", false},    // Contains numbers
+			{"Hello-World", false}, // Contains hyphen
+			{"", false},            // Empty not allowed
+			{nil, true},            // Nil should be skipped
+			{123, false},           // Non-string
+		}
+
+		for _, tc := range testCases {
+			err := validator.Validate("alpha", tc.value)
+			if tc.expected {
+				assert.NoError(t, err, "Value %v should be valid alpha", tc.value)
+			} else {
+				assert.Error(t, err, "Value %v should not be valid alpha", tc.value)
+			}
+		}
+	})
+
+	t.Run("ValidateAlphanumeric", func(t *testing.T) {
+		testCases := []struct {
+			value    interface{}
+			expected bool
+		}{
+			{"HelloWorld123", true}, // Alphanumeric
+			{"Hello123", true},      // Alphanumeric
+			{"123456", true},        // Only numbers
+			{"Hello World", false},  // Contains space
+			{"Hello-World", false},  // Contains hyphen
+			{"", false},             // Empty not allowed
+			{nil, true},             // Nil should be skipped
+			{123, false},            // Non-string
+		}
+
+		for _, tc := range testCases {
+			err := validator.Validate("alphanumeric", tc.value)
+			if tc.expected {
+				assert.NoError(t, err, "Value %v should be valid alphanumeric", tc.value)
+			} else {
+				assert.Error(t, err, "Value %v should not be valid alphanumeric", tc.value)
+			}
+		}
+	})
+
+	t.Run("ValidateNumeric", func(t *testing.T) {
+		testCases := []struct {
+			value    interface{}
+			expected bool
+		}{
+			{"123456", true},     // Only numbers
+			{"0123456789", true}, // Only numbers
+			{"123abc", false},    // Contains letters
+			{"123 456", false},   // Contains space
+			{"123-456", false},   // Contains hyphen
+			{"", false},          // Empty not allowed
+			{nil, true},          // Nil should be skipped
+			{123, false},         // Non-string
+		}
+
+		for _, tc := range testCases {
+			err := validator.Validate("numeric", tc.value)
+			if tc.expected {
+				assert.NoError(t, err, "Value %v should be valid numeric", tc.value)
+			} else {
+				assert.Error(t, err, "Value %v should not be valid numeric", tc.value)
+			}
+		}
+	})
+}

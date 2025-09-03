@@ -2,6 +2,7 @@
 package validatorx
 
 import (
+	"context"
 	"fmt"
 	"reflect"
 	"regexp"
@@ -13,7 +14,34 @@ import (
 
 // Error codes for validation
 const (
-	ErrorCodeValidation = "VALIDATION_ERROR"
+	ErrorCodeValidation   = "VALIDATION_ERROR"
+	ErrorCodeRequired     = "VALIDATION_REQUIRED"
+	ErrorCodeEmail        = "VALIDATION_EMAIL"
+	ErrorCodeURL          = "VALIDATION_URL"
+	ErrorCodeMin          = "VALIDATION_MIN"
+	ErrorCodeMax          = "VALIDATION_MAX"
+	ErrorCodeLen          = "VALIDATION_LEN"
+	ErrorCodeUUID         = "VALIDATION_UUID"
+	ErrorCodeRegex        = "VALIDATION_REGEX"
+	ErrorCodeAlpha        = "VALIDATION_ALPHA"
+	ErrorCodeAlphanumeric = "VALIDATION_ALPHANUMERIC"
+	ErrorCodeNumeric      = "VALIDATION_NUMERIC"
+	ErrorCodeOneOf        = "VALIDATION_ONE_OF"
+	ErrorCodeGTE          = "VALIDATION_GTE"
+	ErrorCodeLTE          = "VALIDATION_LTE"
+	ErrorCodeGT           = "VALIDATION_GT"
+	ErrorCodeLT           = "VALIDATION_LT"
+	ErrorCodeOmitEmpty    = "VALIDATION_OMIT_EMPTY"
+	ErrorCodeContext      = "VALIDATION_CONTEXT"
+)
+
+// Validation rule names
+const (
+	RuleUUID         = "uuid"         // UUID validation
+	RuleRegex        = "regex"        // Regular expression validation
+	RuleAlpha        = "alpha"        // Alphabetic characters only
+	RuleAlphanumeric = "alphanumeric" // Alphanumeric characters only
+	RuleNumeric      = "numeric"      // Numeric characters only
 )
 
 // Error represents a validation error
@@ -43,6 +71,17 @@ func NewErrorf(code, domain, format string, args ...interface{}) error {
 		Code:    code,
 		Domain:  domain,
 		Message: fmt.Sprintf(format, args...),
+	}
+}
+
+// NewValidationInfo creates a new validation info message
+func NewValidationInfo(field, rule string, value interface{}, message, code string) *ValidationInfo {
+	return &ValidationInfo{
+		Field:   field,
+		Rule:    rule,
+		Value:   value,
+		Message: message,
+		Code:    code,
 	}
 }
 
@@ -174,6 +213,7 @@ type ValidationResult struct {
 	Valid    bool
 	Errors   []*ValidationError
 	Warnings []*ValidationWarning
+	Info     []*ValidationInfo
 }
 
 // ValidationError represents a validation error.
@@ -193,6 +233,47 @@ type ValidationWarning struct {
 	Rule        string
 	Message     string
 	Description string
+}
+
+// ValidationInfo represents a validation info message.
+type ValidationInfo struct {
+	Field   string
+	Rule    string
+	Value   interface{}
+	Message string
+	Code    string
+}
+
+// AddInfo adds an info message to the validation result.
+func (vr *ValidationResult) AddInfo(field, rule string, value interface{}, message, code string) {
+	if vr == nil {
+		return
+	}
+	vr.Info = append(vr.Info, &ValidationInfo{
+		Field:   field,
+		Rule:    rule,
+		Value:   value,
+		Message: message,
+		Code:    code,
+	})
+}
+
+// HasInfo returns true if there are validation info messages.
+func (vr *ValidationResult) HasInfo() bool {
+	if vr == nil {
+		return false
+	}
+	return len(vr.Info) > 0
+}
+
+// GetInfo returns all validation info messages.
+func (vr *ValidationResult) GetInfo() []*ValidationInfo {
+	if vr == nil {
+		return make([]*ValidationInfo, 0)
+	}
+	result := make([]*ValidationInfo, len(vr.Info))
+	copy(result, vr.Info)
+	return result
 }
 
 // ValidationSeverity represents the severity of a validation error.
@@ -320,6 +401,7 @@ func (v *Validator) ValidateStruct(obj interface{}) *ValidationResult {
 		Valid:    true,
 		Errors:   make([]*ValidationError, 0),
 		Warnings: make([]*ValidationWarning, 0),
+		Info:     make([]*ValidationInfo, 0),
 	}
 
 	// Check for nil input
@@ -467,6 +549,41 @@ func (v *Validator) ValidateStruct(obj interface{}) *ValidationResult {
 	return result
 }
 
+// ValidateStructWithContext validates a struct using validation tags with context support.
+func (v *Validator) ValidateStructWithContext(ctx context.Context, obj interface{}) *ValidationResult {
+	// Check if context is cancelled
+	select {
+	case <-ctx.Done():
+		return &ValidationResult{
+			Valid: false,
+			Errors: []*ValidationError{{
+				Field:    "context",
+				Value:    nil,
+				Rule:     "context",
+				Message:  "validation cancelled due to context cancellation",
+				Severity: ValidationSeverityError,
+			}},
+			Warnings: []*ValidationWarning{},
+			Info:     []*ValidationInfo{},
+		}
+	default:
+		// Continue with normal validation
+		return v.ValidateStruct(obj)
+	}
+}
+
+// ValidateFieldWithContext validates a field with context support.
+func (v *Validator) ValidateFieldWithContext(ctx context.Context, field string, value interface{}) error {
+	// Check if context is cancelled
+	select {
+	case <-ctx.Done():
+		return NewErrorf(ErrorCodeContext, "context", "validation cancelled due to context cancellation")
+	default:
+		// Continue with normal validation
+		return v.Validate(field, value)
+	}
+}
+
 // applyRule applies a validation rule to a value.
 func (v *Validator) applyRule(ruleName, params string, value interface{}, fieldName string, result *ValidationResult) error {
 	if ruleName == "" {
@@ -500,6 +617,14 @@ func (v *Validator) applyRule(ruleName, params string, value interface{}, fieldN
 		return v.validateGT(value, params, fieldName)
 	case "lt":
 		return v.validateLT(value, params, fieldName)
+	case RuleUUID:
+		return v.validateUUID(value, fieldName)
+	case RuleAlpha:
+		return v.validateAlpha(value, fieldName)
+	case RuleAlphanumeric:
+		return v.validateAlphanumeric(value, fieldName)
+	case RuleNumeric:
+		return v.validateNumeric(value, fieldName)
 	default:
 		// Check if custom rule exists before calling it
 		if _, exists := v.GetRule(ruleName); !exists {
@@ -516,22 +641,22 @@ func (v *Validator) validateRequired(value interface{}, fieldName string) error 
 	}
 
 	if value == nil {
-		return NewErrorf(ErrorCodeValidation, "validation", "field '%s' is required", fieldName)
+		return NewErrorf(ErrorCodeRequired, "validation", "field '%s' is required", fieldName)
 	}
 
 	val := reflect.ValueOf(value)
 	switch val.Kind() {
 	case reflect.String:
 		if strings.TrimSpace(val.String()) == "" {
-			return NewErrorf(ErrorCodeValidation, "validation", "field '%s' is required", fieldName)
+			return NewErrorf(ErrorCodeRequired, "validation", "field '%s' is required", fieldName)
 		}
 	case reflect.Slice, reflect.Array, reflect.Map:
 		if val.Len() == 0 {
-			return NewErrorf(ErrorCodeValidation, "validation", "field '%s' is required", fieldName)
+			return NewErrorf(ErrorCodeRequired, "validation", "field '%s' is required", fieldName)
 		}
 	case reflect.Ptr, reflect.Interface:
 		if val.IsNil() {
-			return NewErrorf(ErrorCodeValidation, "validation", "field '%s' is required", fieldName)
+			return NewErrorf(ErrorCodeRequired, "validation", "field '%s' is required", fieldName)
 		}
 	}
 
@@ -764,7 +889,7 @@ func (v *Validator) validateEmail(value interface{}, fieldName string) error {
 
 	emailRegex := regexp.MustCompile(`^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$`)
 	if !emailRegex.MatchString(str) {
-		return NewErrorf(ErrorCodeValidation, "validation", "field '%s' must be a valid email address", fieldName)
+		return NewErrorf(ErrorCodeEmail, "validation", "field '%s' must be a valid email address", fieldName)
 	}
 
 	return nil
@@ -787,7 +912,7 @@ func (v *Validator) validateURL(value interface{}, fieldName string) error {
 
 	urlRegex := regexp.MustCompile(`^https?://[^\s/$.?#].[^\s]*$`)
 	if !urlRegex.MatchString(str) {
-		return NewErrorf(ErrorCodeValidation, "validation", "field '%s' must be a valid URL", fieldName)
+		return NewErrorf(ErrorCodeURL, "validation", "field '%s' must be a valid URL", fieldName)
 	}
 
 	return nil
@@ -1002,12 +1127,117 @@ func (v *Validator) validateLT(value interface{}, params string, fieldName strin
 	return nil
 }
 
+// validateUUID validates that a value is a valid UUID.
+func (v *Validator) validateUUID(value interface{}, fieldName string) error {
+	if fieldName == "" {
+		return NewErrorf(ErrorCodeValidation, "validation", "field name cannot be empty")
+	}
+
+	if value == nil {
+		return nil // Skip if nil (use required rule for that)
+	}
+
+	str, ok := value.(string)
+	if !ok {
+		return NewErrorf(ErrorCodeValidation, "validation", "field '%s' must be a string", fieldName)
+	}
+
+	// UUID regex pattern (supports both v4 and v5 formats)
+	uuidRegex := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	if !uuidRegex.MatchString(strings.ToLower(str)) {
+		return NewErrorf(ErrorCodeUUID, "validation", "field '%s' must be a valid UUID", fieldName)
+	}
+
+	return nil
+}
+
+// validateAlpha validates that a value contains only alphabetic characters.
+func (v *Validator) validateAlpha(value interface{}, fieldName string) error {
+	if fieldName == "" {
+		return NewErrorf(ErrorCodeValidation, "validation", "field name cannot be empty")
+	}
+
+	if value == nil {
+		return nil // Skip if nil (use required rule for that)
+	}
+
+	str, ok := value.(string)
+	if !ok {
+		return NewErrorf(ErrorCodeValidation, "validation", "field '%s' must be a string", fieldName)
+	}
+
+	if str == "" {
+		return nil // Empty strings are valid for alpha (use required rule for non-empty validation)
+	}
+
+	alphaRegex := regexp.MustCompile(`^[a-zA-Z]+$`)
+	if !alphaRegex.MatchString(str) {
+		return NewErrorf(ErrorCodeAlpha, "validation", "field '%s' must contain only alphabetic characters", fieldName)
+	}
+
+	return nil
+}
+
+// validateAlphanumeric validates that a value contains only alphanumeric characters.
+func (v *Validator) validateAlphanumeric(value interface{}, fieldName string) error {
+	if fieldName == "" {
+		return NewErrorf(ErrorCodeValidation, "validation", "field name cannot be empty")
+	}
+
+	if value == nil {
+		return nil // Skip if nil (use required rule for that)
+	}
+
+	str, ok := value.(string)
+	if !ok {
+		return NewErrorf(ErrorCodeValidation, "validation", "field '%s' must be a string", fieldName)
+	}
+
+	if str == "" {
+		return nil // Empty strings are valid for alphanumeric (use required rule for non-empty validation)
+	}
+
+	alphanumericRegex := regexp.MustCompile(`^[a-zA-Z0-9]+$`)
+	if !alphanumericRegex.MatchString(str) {
+		return NewErrorf(ErrorCodeAlphanumeric, "validation", "field '%s' must contain only alphanumeric characters", fieldName)
+	}
+
+	return nil
+}
+
+// validateNumeric validates that a value contains only numeric characters.
+func (v *Validator) validateNumeric(value interface{}, fieldName string) error {
+	if fieldName == "" {
+		return NewErrorf(ErrorCodeValidation, "validation", "field name cannot be empty")
+	}
+
+	if value == nil {
+		return nil // Skip if nil (use required rule for that)
+	}
+
+	str, ok := value.(string)
+	if !ok {
+		return NewErrorf(ErrorCodeValidation, "validation", "field '%s' must be a string", fieldName)
+	}
+
+	if str == "" {
+		return nil // Empty strings are valid for numeric (use required rule for non-empty validation)
+	}
+
+	numericRegex := regexp.MustCompile(`^[0-9]+$`)
+	if !numericRegex.MatchString(str) {
+		return NewErrorf(ErrorCodeNumeric, "validation", "field '%s' must contain only numeric characters", fieldName)
+	}
+
+	return nil
+}
+
 // RequiredValidationRule validates that a value is not empty.
 type RequiredValidationRule struct{}
 
 func (r *RequiredValidationRule) Validate(value interface{}) error {
 	if value == nil {
-		return NewError(ErrorCodeValidation, "required", "value cannot be nil")
+		return NewError(ErrorCodeRequired, "required", "value cannot be nil")
 	}
 
 	val := reflect.ValueOf(value)
@@ -1324,6 +1554,143 @@ func (v *Validator) registerDefaultRules() {
 	v.RegisterRule(&LTEValidationRule{})
 	v.RegisterRule(&GTValidationRule{})
 	v.RegisterRule(&LTValidationRule{})
+	v.RegisterRule(&UUIDValidationRule{})
+	v.RegisterRule(&AlphaValidationRule{})
+	v.RegisterRule(&AlphanumericValidationRule{})
+	v.RegisterRule(&NumericValidationRule{})
+}
+
+// UUIDValidationRule validates that a value is a valid UUID.
+type UUIDValidationRule struct{}
+
+func (r *UUIDValidationRule) Validate(value interface{}) error {
+	if value == nil {
+		return nil // Nil values should be skipped
+	}
+
+	str, ok := value.(string)
+	if !ok {
+		return NewError(ErrorCodeUUID, "uuid", "value must be a string")
+	}
+
+	if str == "" {
+		return NewError(ErrorCodeValidation, "uuid", "uuid cannot be empty")
+	}
+
+	// UUID regex pattern (supports both v4 and v5 formats)
+	uuidRegex := regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	if !uuidRegex.MatchString(strings.ToLower(str)) {
+		return NewError(ErrorCodeUUID, "uuid", "invalid uuid format")
+	}
+
+	return nil
+}
+
+func (r *UUIDValidationRule) GetName() string {
+	return RuleUUID
+}
+
+func (r *UUIDValidationRule) GetDescription() string {
+	return "validates that a value is a valid UUID"
+}
+
+// AlphaValidationRule validates that a value contains only alphabetic characters.
+type AlphaValidationRule struct{}
+
+func (r *AlphaValidationRule) Validate(value interface{}) error {
+	if value == nil {
+		return nil // Nil values should be skipped
+	}
+
+	str, ok := value.(string)
+	if !ok {
+		return NewError(ErrorCodeAlpha, "alpha", "value must be a string")
+	}
+
+	if str == "" {
+		return NewError(ErrorCodeAlpha, "alpha", "alpha value cannot be empty")
+	}
+
+	alphaRegex := regexp.MustCompile(`^[a-zA-Z]+$`)
+	if !alphaRegex.MatchString(str) {
+		return NewError(ErrorCodeAlpha, "alpha", "value must contain only alphabetic characters")
+	}
+
+	return nil
+}
+
+func (r *AlphaValidationRule) GetName() string {
+	return RuleAlpha
+}
+
+func (r *AlphaValidationRule) GetDescription() string {
+	return "validates that a value contains only alphabetic characters"
+}
+
+// AlphanumericValidationRule validates that a value contains only alphanumeric characters.
+type AlphanumericValidationRule struct{}
+
+func (r *AlphanumericValidationRule) Validate(value interface{}) error {
+	if value == nil {
+		return nil // Nil values should be skipped
+	}
+
+	str, ok := value.(string)
+	if !ok {
+		return NewError(ErrorCodeAlphanumeric, "alphanumeric", "value must be a string")
+	}
+
+	if str == "" {
+		return NewError(ErrorCodeAlphanumeric, "alphanumeric", "alphanumeric value cannot be empty")
+	}
+
+	alphanumericRegex := regexp.MustCompile(`^[a-zA-Z0-9]+$`)
+	if !alphanumericRegex.MatchString(str) {
+		return NewError(ErrorCodeAlphanumeric, "alphanumeric", "value must contain only alphanumeric characters")
+	}
+
+	return nil
+}
+
+func (r *AlphanumericValidationRule) GetName() string {
+	return RuleAlphanumeric
+}
+
+func (r *AlphanumericValidationRule) GetDescription() string {
+	return "validates that a value contains only alphanumeric characters"
+}
+
+// NumericValidationRule validates that a value contains only numeric characters.
+type NumericValidationRule struct{}
+
+func (r *NumericValidationRule) Validate(value interface{}) error {
+	if value == nil {
+		return nil // Nil values should be skipped
+	}
+
+	str, ok := value.(string)
+	if !ok {
+		return NewError(ErrorCodeNumeric, "numeric", "value must be a string")
+	}
+
+	if str == "" {
+		return NewError(ErrorCodeNumeric, "numeric", "numeric value cannot be empty")
+	}
+
+	numericRegex := regexp.MustCompile(`^[0-9]+$`)
+	if !numericRegex.MatchString(str) {
+		return NewError(ErrorCodeNumeric, "numeric", "value must contain only numeric characters")
+	}
+
+	return nil
+}
+
+func (r *NumericValidationRule) GetName() string {
+	return RuleNumeric
+}
+
+func (r *NumericValidationRule) GetDescription() string {
+	return "validates that a value contains only numeric characters"
 }
 
 // ValidationContext provides context for validation operations.
@@ -1599,6 +1966,16 @@ func ValidateStruct(obj interface{}) *ValidationResult {
 // ValidateField validates a field using the global validator.
 func ValidateField(ruleName string, value interface{}) error {
 	return getGlobalValidator().Validate(ruleName, value)
+}
+
+// ValidateStructWithContext validates a struct using the global validator with context support.
+func ValidateStructWithContext(ctx context.Context, obj interface{}) *ValidationResult {
+	return getGlobalValidator().ValidateStructWithContext(ctx, obj)
+}
+
+// ValidateFieldWithContext validates a field using the global validator with context support.
+func ValidateFieldWithContext(ctx context.Context, ruleName string, value interface{}) error {
+	return getGlobalValidator().ValidateFieldWithContext(ctx, ruleName, value)
 }
 
 // MessageOption represents a message option function

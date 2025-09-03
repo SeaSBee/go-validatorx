@@ -1,6 +1,7 @@
 package unit
 
 import (
+	"context"
 	"fmt"
 	"sync"
 	"testing"
@@ -578,5 +579,153 @@ func TestStructTagParsing(t *testing.T) {
 		assert.False(t, result.Valid)
 		assert.Len(t, result.Errors, 1)
 		assert.Contains(t, result.Errors[0].Message, "must be a struct")
+	})
+}
+
+// TestContextSupport tests the context-aware validation methods
+func TestContextSupport(t *testing.T) {
+	validator := validatorx.NewValidator()
+
+	type TestStruct struct {
+		Name  string `validate:"required"`
+		Email string `validate:"required,email"`
+	}
+
+	t.Run("ValidateStructWithContext", func(t *testing.T) {
+		// Test with valid context
+		ctx := context.Background()
+		validStruct := TestStruct{
+			Name:  "John Doe",
+			Email: "john@example.com",
+		}
+		result := validator.ValidateStructWithContext(ctx, validStruct)
+		assert.True(t, result.Valid)
+
+		// Test with cancelled context
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // Cancel immediately
+		result = validator.ValidateStructWithContext(ctx, validStruct)
+		assert.False(t, result.Valid)
+		assert.Len(t, result.Errors, 1)
+		assert.Contains(t, result.Errors[0].Message, "validation cancelled due to context cancellation")
+		assert.Equal(t, "context", result.Errors[0].Field)
+	})
+
+	t.Run("ValidateFieldWithContext", func(t *testing.T) {
+		// Test with valid context
+		ctx := context.Background()
+		err := validator.ValidateFieldWithContext(ctx, "email", "valid@example.com")
+		assert.NoError(t, err)
+
+		// Test with cancelled context
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel() // Cancel immediately
+		err = validator.ValidateFieldWithContext(ctx, "email", "valid@example.com")
+		assert.Error(t, err)
+		assert.Contains(t, err.Error(), "validation cancelled due to context cancellation")
+	})
+
+	t.Run("GlobalContextFunctions", func(t *testing.T) {
+		// Test global ValidateStructWithContext
+		ctx := context.Background()
+		validStruct := TestStruct{
+			Name:  "Jane Doe",
+			Email: "jane@example.com",
+		}
+		result := validatorx.ValidateStructWithContext(ctx, validStruct)
+		assert.True(t, result.Valid)
+
+		// Test global ValidateFieldWithContext
+		err := validatorx.ValidateFieldWithContext(ctx, "email", "jane@example.com")
+		assert.NoError(t, err)
+	})
+}
+
+// TestValidationInfoSupport tests the ValidationInfo functionality
+func TestValidationInfoSupport(t *testing.T) {
+	t.Run("ValidationInfoCreation", func(t *testing.T) {
+		info := validatorx.NewValidationInfo("test_field", "test_rule", "test_value", "Test message", "TEST_CODE")
+
+		assert.Equal(t, "test_field", info.Field)
+		assert.Equal(t, "test_rule", info.Rule)
+		assert.Equal(t, "test_value", info.Value)
+		assert.Equal(t, "Test message", info.Message)
+		assert.Equal(t, "TEST_CODE", info.Code)
+	})
+
+	t.Run("ValidationResultInfoMethods", func(t *testing.T) {
+		result := &validatorx.ValidationResult{
+			Valid:    true,
+			Errors:   make([]*validatorx.ValidationError, 0),
+			Warnings: make([]*validatorx.ValidationWarning, 0),
+			Info:     make([]*validatorx.ValidationInfo, 0),
+		}
+
+		// Test AddInfo
+		result.AddInfo("field1", "rule1", "value1", "Info message 1", "INFO_1")
+		result.AddInfo("field2", "rule2", "value2", "Info message 2", "INFO_2")
+
+		// Test HasInfo
+		assert.True(t, result.HasInfo())
+
+		// Test GetInfo
+		infoList := result.GetInfo()
+		assert.Len(t, infoList, 2)
+		assert.Equal(t, "field1", infoList[0].Field)
+		assert.Equal(t, "field2", infoList[1].Field)
+
+		// Test that info is properly stored
+		assert.True(t, result.HasInfo())
+		assert.Len(t, result.GetInfo(), 2)
+	})
+
+	t.Run("ValidationResultInfoNilHandling", func(t *testing.T) {
+		var result *validatorx.ValidationResult
+
+		// All methods should handle nil gracefully
+		result.AddInfo("field", "rule", "value", "message", "code")
+		assert.False(t, result.HasInfo())
+		assert.Empty(t, result.GetInfo())
+	})
+}
+
+// TestErrorCodeConstants tests the error code constants
+func TestErrorCodeConstants(t *testing.T) {
+	t.Run("ErrorCodeValues", func(t *testing.T) {
+		// Test that all error codes are properly defined
+		assert.Equal(t, "VALIDATION_ERROR", validatorx.ErrorCodeValidation)
+		assert.Equal(t, "VALIDATION_REQUIRED", validatorx.ErrorCodeRequired)
+		assert.Equal(t, "VALIDATION_EMAIL", validatorx.ErrorCodeEmail)
+		assert.Equal(t, "VALIDATION_URL", validatorx.ErrorCodeURL)
+		assert.Equal(t, "VALIDATION_MIN", validatorx.ErrorCodeMin)
+		assert.Equal(t, "VALIDATION_MAX", validatorx.ErrorCodeMax)
+		assert.Equal(t, "VALIDATION_LEN", validatorx.ErrorCodeLen)
+		assert.Equal(t, "VALIDATION_UUID", validatorx.ErrorCodeUUID)
+		assert.Equal(t, "VALIDATION_REGEX", validatorx.ErrorCodeRegex)
+		assert.Equal(t, "VALIDATION_ALPHA", validatorx.ErrorCodeAlpha)
+		assert.Equal(t, "VALIDATION_ALPHANUMERIC", validatorx.ErrorCodeAlphanumeric)
+		assert.Equal(t, "VALIDATION_NUMERIC", validatorx.ErrorCodeNumeric)
+		assert.Equal(t, "VALIDATION_ONE_OF", validatorx.ErrorCodeOneOf)
+		assert.Equal(t, "VALIDATION_GTE", validatorx.ErrorCodeGTE)
+		assert.Equal(t, "VALIDATION_LTE", validatorx.ErrorCodeLTE)
+		assert.Equal(t, "VALIDATION_GT", validatorx.ErrorCodeGT)
+		assert.Equal(t, "VALIDATION_LT", validatorx.ErrorCodeLT)
+		assert.Equal(t, "VALIDATION_OMIT_EMPTY", validatorx.ErrorCodeOmitEmpty)
+		assert.Equal(t, "VALIDATION_CONTEXT", validatorx.ErrorCodeContext)
+	})
+
+	t.Run("ErrorCodeUsage", func(t *testing.T) {
+		validator := validatorx.NewValidator()
+
+		// Test that specific error codes are used in validation
+		err := validator.Validate("required", nil)
+		assert.Error(t, err)
+		// Note: The actual error code will be ErrorCodeValidation since the rule itself returns that
+		// But we can test that the validation works with the new rules
+
+		// Test UUID validation with specific error code
+		err = validator.Validate("uuid", "invalid-uuid")
+		assert.Error(t, err)
+		// The error should contain information about UUID validation
 	})
 }

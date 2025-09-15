@@ -1,4 +1,4 @@
-// Package messaging provides transport-agnostic interfaces for messaging systems.
+// Package validatorx provides a comprehensive Go validation library with flexible, extensible validation capabilities.
 package validatorx
 
 import (

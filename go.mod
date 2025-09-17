@@ -1,4 +1,4 @@
-module github.com/SeaSBee/go-validatorx
+module github.com/seasbee/go-validatorx
 
 go 1.24.5
 

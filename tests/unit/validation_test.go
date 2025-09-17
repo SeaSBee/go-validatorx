@@ -3,7 +3,7 @@ package unit
 import (
 	"testing"
 
-	"github.com/SeaSBee/go-validatorx"
+	"github.com/seasbee/go-validatorx"
 	"github.com/stretchr/testify/assert"
 )
 

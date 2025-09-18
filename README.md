@@ -17,6 +17,13 @@ A comprehensive Go validation library that provides flexible, extensible validat
 
 ## Recent Improvements
 
+### **v1.1.1 - Enhanced Duration Validation** 🎉
+- **Human-Readable Duration Strings**: Support for `1s`, `30s`, `5m`, `1h`, `100ms`, `24h` in validation tags
+- **Decimal Duration Support**: Support for `1.5s`, `0.5s` (Go's built-in decimal durations)
+- **Backward Compatibility**: Maintained support for nanosecond values
+- **Improved Error Messages**: Clear, helpful error messages for duration validation
+- **Comprehensive Testing**: 40+ new test cases for duration validation
+
 ### **New Validation Rules**
 - **UUID Validation**: Support for UUID v4 and v5 format validation
 - **Alpha Validation**: Alphabetic characters only validation
@@ -41,6 +48,10 @@ A comprehensive Go validation library that provides flexible, extensible validat
 ## Installation
 
 ```bash
+# Latest version (v1.1.1)
+go get github.com/seasbee/go-validatorx@v1.1.1
+
+# Or get the latest
 go get github.com/seasbee/go-validatorx
 ```
 
@@ -215,6 +226,29 @@ if ctx.HasErrors() {
 - `lte:N` - Less than or equal
 - `gt:N` - Greater than
 - `lt:N` - Less than
+
+### Duration Rules (NEW in v1.1.1)
+
+- `min:duration` - Minimum duration (supports `1s`, `30s`, `5m`, `1h`, `100ms`, `24h`, `1.5s`)
+- `max:duration` - Maximum duration (supports `1s`, `30s`, `5m`, `1h`, `100ms`, `24h`, `1.5s`)
+
+**Duration Examples:**
+```go
+type Config struct {
+    Timeout     time.Duration `validate:"required,min:1s,max:30s"`
+    Expiration  time.Duration `validate:"omitempty,min:0,max:24h"`
+    RetryDelay  time.Duration `validate:"required,min:100ms,max:5m"`
+    Precision   time.Duration `validate:"required,min:0.5s,max:1.5s"` // Decimal support
+}
+```
+
+**Supported Duration Formats:**
+- `"1s"`, `"30s"`, `"5s"` - Seconds
+- `"1m"`, `"5m"`, `"30m"` - Minutes  
+- `"1h"`, `"2h"`, `"24h"` - Hours
+- `"100ms"`, `"500ms"` - Milliseconds
+- `"1.5s"`, `"0.5s"` - Decimal durations
+- Nanosecond values (backward compatibility)
 
 ### Collection Rules
 

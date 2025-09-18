@@ -218,6 +218,116 @@ func TestValidateMin(t *testing.T) {
 		}
 	})
 
+	t.Run("DurationStringFormats", func(t *testing.T) {
+		testCases := []struct {
+			value    time.Duration
+			min      string
+			expected bool
+			desc     string
+		}{
+			// Seconds
+			{10 * time.Second, "5s", true, "10s >= 5s"},
+			{3 * time.Second, "5s", false, "3s < 5s"},
+			{1 * time.Second, "1s", true, "1s >= 1s"},
+
+			// Minutes
+			{2 * time.Minute, "1m", true, "2m >= 1m"},
+			{30 * time.Second, "1m", false, "30s < 1m"},
+			{1 * time.Minute, "1m", true, "1m >= 1m"},
+
+			// Hours
+			{2 * time.Hour, "1h", true, "2h >= 1h"},
+			{30 * time.Minute, "1h", false, "30m < 1h"},
+			{1 * time.Hour, "1h", true, "1h >= 1h"},
+
+			// Milliseconds
+			{500 * time.Millisecond, "100ms", true, "500ms >= 100ms"},
+			{50 * time.Millisecond, "100ms", false, "50ms < 100ms"},
+			{100 * time.Millisecond, "100ms", true, "100ms >= 100ms"},
+
+			// Mixed formats
+			{90 * time.Second, "1m", true, "90s >= 1m"},
+			{30 * time.Second, "1m", false, "30s < 1m"},
+			{1*time.Hour + 30*time.Minute, "1h", true, "1h30m >= 1h"},
+		}
+
+		for _, tc := range testCases {
+			err := validator.Validate("min:"+tc.min, tc.value)
+			if tc.expected {
+				assert.NoError(t, err, "%s: Duration %v should be >= %s", tc.desc, tc.value, tc.min)
+			} else {
+				assert.Error(t, err, "%s: Duration %v should not be >= %s", tc.desc, tc.value, tc.min)
+			}
+		}
+	})
+
+	t.Run("DurationNanosecondBackwardCompatibility", func(t *testing.T) {
+		testCases := []struct {
+			value    time.Duration
+			min      string
+			expected bool
+			desc     string
+		}{
+			{1 * time.Second, "1000000000", true, "1s >= 1s (nanoseconds)"},
+			{500 * time.Millisecond, "1000000000", false, "500ms < 1s (nanoseconds)"},
+			{2 * time.Second, "1000000000", true, "2s >= 1s (nanoseconds)"},
+			{1 * time.Minute, "30000000000", true, "1m >= 30s (nanoseconds)"},
+			{15 * time.Second, "30000000000", false, "15s < 30s (nanoseconds)"},
+		}
+
+		for _, tc := range testCases {
+			err := validator.Validate("min:"+tc.min, tc.value)
+			if tc.expected {
+				assert.NoError(t, err, "%s: Duration %v should be >= %s nanoseconds", tc.desc, tc.value, tc.min)
+			} else {
+				assert.Error(t, err, "%s: Duration %v should not be >= %s nanoseconds", tc.desc, tc.value, tc.min)
+			}
+		}
+	})
+
+	t.Run("DurationInvalidParameters", func(t *testing.T) {
+		testCases := []struct {
+			value         time.Duration
+			min           string
+			expectedError string
+		}{
+			{1 * time.Second, "invalid", "invalid min parameter for duration field"},
+			{1 * time.Second, "1x", "invalid min parameter for duration field"},
+			{1 * time.Second, "abc", "invalid min parameter for duration field"},
+			{1 * time.Second, "1.5.5s", "invalid min parameter for duration field"},
+		}
+
+		for _, tc := range testCases {
+			err := validator.Validate("min:"+tc.min, tc.value)
+			assert.Error(t, err, "Should error for invalid duration parameter: %s", tc.min)
+			assert.Contains(t, err.Error(), tc.expectedError, "Error message should contain expected text")
+		}
+	})
+
+	t.Run("DurationValidDecimalFormats", func(t *testing.T) {
+		testCases := []struct {
+			value    time.Duration
+			min      string
+			expected bool
+			desc     string
+		}{
+			{1500 * time.Millisecond, "1.5s", true, "1.5s >= 1.5s"},
+			{1 * time.Second, "1.5s", false, "1s < 1.5s"},
+			{2 * time.Second, "1.5s", true, "2s >= 1.5s"},
+			{500 * time.Millisecond, "0.5s", true, "500ms >= 0.5s"},
+			{200 * time.Millisecond, "0.5s", false, "200ms < 0.5s"},
+		}
+
+		for _, tc := range testCases {
+			err := validator.Validate("min:"+tc.min, tc.value)
+			if tc.expected {
+				assert.NoError(t, err, "%s: Duration %v should be >= %s", tc.desc, tc.value, tc.min)
+			} else {
+				assert.Error(t, err, "%s: Duration %v should not be >= %s", tc.desc, tc.value, tc.min)
+			}
+		}
+	})
+
 	t.Run("InvalidParameters", func(t *testing.T) {
 		// Test with invalid min parameter
 		err := validator.Validate("min:invalid", 10)
@@ -310,6 +420,116 @@ func TestValidateMax(t *testing.T) {
 				assert.NoError(t, err, "Duration %v should be <= %s", tc.value, tc.max)
 			} else {
 				assert.Error(t, err, "Duration %v should not be <= %s", tc.value, tc.max)
+			}
+		}
+	})
+
+	t.Run("DurationStringFormats", func(t *testing.T) {
+		testCases := []struct {
+			value    time.Duration
+			max      string
+			expected bool
+			desc     string
+		}{
+			// Seconds
+			{3 * time.Second, "5s", true, "3s <= 5s"},
+			{10 * time.Second, "5s", false, "10s > 5s"},
+			{5 * time.Second, "5s", true, "5s <= 5s"},
+
+			// Minutes
+			{30 * time.Second, "1m", true, "30s <= 1m"},
+			{2 * time.Minute, "1m", false, "2m > 1m"},
+			{1 * time.Minute, "1m", true, "1m <= 1m"},
+
+			// Hours
+			{30 * time.Minute, "1h", true, "30m <= 1h"},
+			{2 * time.Hour, "1h", false, "2h > 1h"},
+			{1 * time.Hour, "1h", true, "1h <= 1h"},
+
+			// Milliseconds
+			{50 * time.Millisecond, "100ms", true, "50ms <= 100ms"},
+			{500 * time.Millisecond, "100ms", false, "500ms > 100ms"},
+			{100 * time.Millisecond, "100ms", true, "100ms <= 100ms"},
+
+			// Mixed formats
+			{30 * time.Second, "1m", true, "30s <= 1m"},
+			{90 * time.Second, "1m", false, "90s > 1m"},
+			{1*time.Hour + 30*time.Minute, "2h", true, "1h30m <= 2h"},
+		}
+
+		for _, tc := range testCases {
+			err := validator.Validate("max:"+tc.max, tc.value)
+			if tc.expected {
+				assert.NoError(t, err, "%s: Duration %v should be <= %s", tc.desc, tc.value, tc.max)
+			} else {
+				assert.Error(t, err, "%s: Duration %v should not be <= %s", tc.desc, tc.value, tc.max)
+			}
+		}
+	})
+
+	t.Run("DurationNanosecondBackwardCompatibility", func(t *testing.T) {
+		testCases := []struct {
+			value    time.Duration
+			max      string
+			expected bool
+			desc     string
+		}{
+			{500 * time.Millisecond, "1000000000", true, "500ms <= 1s (nanoseconds)"},
+			{2 * time.Second, "1000000000", false, "2s > 1s (nanoseconds)"},
+			{1 * time.Second, "1000000000", true, "1s <= 1s (nanoseconds)"},
+			{15 * time.Second, "30000000000", true, "15s <= 30s (nanoseconds)"},
+			{1 * time.Minute, "30000000000", false, "1m > 30s (nanoseconds)"},
+		}
+
+		for _, tc := range testCases {
+			err := validator.Validate("max:"+tc.max, tc.value)
+			if tc.expected {
+				assert.NoError(t, err, "%s: Duration %v should be <= %s nanoseconds", tc.desc, tc.value, tc.max)
+			} else {
+				assert.Error(t, err, "%s: Duration %v should not be <= %s nanoseconds", tc.desc, tc.value, tc.max)
+			}
+		}
+	})
+
+	t.Run("DurationInvalidParameters", func(t *testing.T) {
+		testCases := []struct {
+			value         time.Duration
+			max           string
+			expectedError string
+		}{
+			{1 * time.Second, "invalid", "invalid max parameter for duration field"},
+			{1 * time.Second, "1x", "invalid max parameter for duration field"},
+			{1 * time.Second, "abc", "invalid max parameter for duration field"},
+			{1 * time.Second, "1.5.5s", "invalid max parameter for duration field"},
+		}
+
+		for _, tc := range testCases {
+			err := validator.Validate("max:"+tc.max, tc.value)
+			assert.Error(t, err, "Should error for invalid duration parameter: %s", tc.max)
+			assert.Contains(t, err.Error(), tc.expectedError, "Error message should contain expected text")
+		}
+	})
+
+	t.Run("DurationValidDecimalFormats", func(t *testing.T) {
+		testCases := []struct {
+			value    time.Duration
+			max      string
+			expected bool
+			desc     string
+		}{
+			{1500 * time.Millisecond, "1.5s", true, "1.5s <= 1.5s"},
+			{1 * time.Second, "1.5s", true, "1s <= 1.5s"},
+			{2 * time.Second, "1.5s", false, "2s > 1.5s"},
+			{500 * time.Millisecond, "0.5s", true, "500ms <= 0.5s"},
+			{600 * time.Millisecond, "0.5s", false, "600ms > 0.5s"},
+		}
+
+		for _, tc := range testCases {
+			err := validator.Validate("max:"+tc.max, tc.value)
+			if tc.expected {
+				assert.NoError(t, err, "%s: Duration %v should be <= %s", tc.desc, tc.value, tc.max)
+			} else {
+				assert.Error(t, err, "%s: Duration %v should not be <= %s", tc.desc, tc.value, tc.max)
 			}
 		}
 	})

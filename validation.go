@@ -146,7 +146,7 @@ type Message struct {
 	IdempotencyKey string            `validate:"omitempty,max:255,regexp:^[a-zA-Z0-9_-]*$"`
 	CorrelationID  string            `validate:"omitempty,max:255,regexp:^[a-zA-Z0-9_-]*$"`
 	ReplyTo        string            `validate:"omitempty,max:255,regexp:^[a-zA-Z0-9._-]*$"`
-	Expiration     time.Duration     `validate:"omitempty,min:0,max:86400000000000"`
+	Expiration     time.Duration     `validate:"omitempty,min:0,max:24h"`
 }
 
 // Delivery represents a message delivery
@@ -161,7 +161,7 @@ type Delivery struct {
 type PublisherConfig struct {
 	MaxInFlight    int           `validate:"required,min:1,max:1000"`
 	WorkerCount    int           `validate:"required,min:1,max:100"`
-	PublishTimeout time.Duration `validate:"required,min:1000000000,max:300000000000"` // 1s to 5m
+	PublishTimeout time.Duration `validate:"required,min:1s,max:5m"`
 }
 
 // ConsumerConfig represents consumer configuration
@@ -169,7 +169,7 @@ type ConsumerConfig struct {
 	Queue                 string        `validate:"required,min:1,max:255"`
 	Prefetch              int           `validate:"required,min:1,max:1000"`
 	MaxConcurrentHandlers int           `validate:"required,min:1,max:1000"`
-	HandlerTimeout        time.Duration `validate:"required,min:1000000000,max:300000000000"` // 1s to 5m
+	HandlerTimeout        time.Duration `validate:"required,min:1s,max:5m"`
 }
 
 // Regex cache for validation patterns to avoid repeated compilation
@@ -719,13 +719,25 @@ func (v *Validator) validateMin(value interface{}, params string, fieldName stri
 			return NewErrorf(ErrorCodeValidation, "validation", "field '%s' is not a valid duration", fieldName)
 		}
 
-		// Try to parse the parameter as a duration
+		// Try to parse the parameter as a duration string first (e.g., "1s", "30s", "5m")
 		if paramDuration, err := time.ParseDuration(params); err == nil {
 			if duration < paramDuration {
 				return NewErrorf(ErrorCodeValidation, "validation", "field '%s' must be >= %v", fieldName, paramDuration)
 			}
 			return nil
 		}
+
+		// If duration parsing fails, try parsing as nanoseconds for backward compatibility
+		if nanosecs, err := strconv.ParseInt(params, 10, 64); err == nil {
+			paramDuration := time.Duration(nanosecs)
+			if duration < paramDuration {
+				return NewErrorf(ErrorCodeValidation, "validation", "field '%s' must be >= %v", fieldName, paramDuration)
+			}
+			return nil
+		}
+
+		// If both parsing attempts fail, return a helpful error message
+		return NewErrorf(ErrorCodeValidation, "validation", "invalid min parameter for duration field '%s': '%s' (expected duration string like '1s', '30s', '5m' or nanoseconds)", fieldName, params)
 	}
 
 	// Handle numeric values
@@ -788,13 +800,25 @@ func (v *Validator) validateMax(value interface{}, params string, fieldName stri
 			return NewErrorf(ErrorCodeValidation, "validation", "field '%s' is not a valid duration", fieldName)
 		}
 
-		// Try to parse the parameter as a duration
+		// Try to parse the parameter as a duration string first (e.g., "1s", "30s", "5m")
 		if paramDuration, err := time.ParseDuration(params); err == nil {
 			if duration > paramDuration {
 				return NewErrorf(ErrorCodeValidation, "validation", "field '%s' must be <= %v", fieldName, paramDuration)
 			}
 			return nil
 		}
+
+		// If duration parsing fails, try parsing as nanoseconds for backward compatibility
+		if nanosecs, err := strconv.ParseInt(params, 10, 64); err == nil {
+			paramDuration := time.Duration(nanosecs)
+			if duration > paramDuration {
+				return NewErrorf(ErrorCodeValidation, "validation", "field '%s' must be <= %v", fieldName, paramDuration)
+			}
+			return nil
+		}
+
+		// If both parsing attempts fail, return a helpful error message
+		return NewErrorf(ErrorCodeValidation, "validation", "invalid max parameter for duration field '%s': '%s' (expected duration string like '1s', '30s', '5m' or nanoseconds)", fieldName, params)
 	}
 
 	// Handle numeric values
